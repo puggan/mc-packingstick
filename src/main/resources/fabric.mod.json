@@ -1,38 +1,34 @@
 {
   "schemaVersion": 1,
-  "id": "modid",
+  "id": "packing_stick",
   "version": "${version}",
-
-  "name": "Example Mod",
-  "description": "This is an example description! Tell everyone what your mod is about!",
+  "name": "Packing Stick",
+  "description": "Vacum up all items in to beutifull statcks",
   "authors": [
-    "Me!"
+    "Puggan Sundragon"
   ],
   "contact": {
-    "homepage": "https://fabricmc.net/",
-    "sources": "https://github.com/FabricMC/fabric-example-mod"
+    "homepage": "https://github.com/puggan/mc-packingstick",
+    "issues": "https://github.com/puggan/mc-packingstick/issues",
+    "sources": "https://github.com/puggan/mc-packingstick"
   },
-
-  "license": "CC0-1.0",
-  "icon": "assets/modid/icon.png",
-
+  "license": "MIT",
+  "icon": "logo.png",
   "environment": "*",
   "entrypoints": {
     "main": [
-      "net.fabricmc.example.ExampleMod"
+      "se.puggan.packingstick.PackingStick"
     ]
   },
   "mixins": [
-    "modid.mixins.json"
   ],
-
   "depends": {
-    "fabricloader": ">=0.11.3",
+    "fabricloader": ">=${loader_version}",
     "fabric": "*",
-    "minecraft": "1.17.x",
+    "minecraft": "${mc_mversion}.x",
     "java": ">=16"
   },
   "suggests": {
-    "another-mod": "*"
+    "flamingo": "*"
   }
 }
