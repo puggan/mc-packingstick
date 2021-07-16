@@ -101,7 +101,6 @@ public class ItemReference {
         if(stack.isEmpty()) {
             availableSpace++;
         }
-        System.out.println("Modifying Shulker, adding " + stack.getCount() + " of " + stack.getName().getString() + " in position " + index + " of " + description());
         saveShulker();
     }
 
@@ -128,17 +127,13 @@ public class ItemReference {
         }
 
         NbtCompound shulkerItemTags = stack.getNbt();
-        System.out.println("Shulker Tag: " + shulkerItemTags.toString());
         // noinspection ConstantConditions tested with hasTag()
         NbtCompound shulkerEntityTag = shulkerItemTags.getCompound(BlockItem.BLOCK_ENTITY_TAG_KEY);
-        System.out.println("Shulker Entity: " + shulkerEntityTag.toString());
 
         if(!shulkerEntityTag.contains("Items", NbtElement.LIST_TYPE)) {
-            System.out.println("Shulker Items: None");
             return inventory;
         }
 
-        System.out.println("Shulker Items: Loading");
         Inventories.readNbt(shulkerEntityTag, inventory);
         availableSpace = 0;
         for(ItemStack stack : inventory) {
@@ -162,6 +157,5 @@ public class ItemReference {
         shulkerEntityTag.remove("Items");
         Inventories.writeNbt(shulkerEntityTag, inventory, false);
         shulkerItemTags.put(BlockItem.BLOCK_ENTITY_TAG_KEY, shulkerEntityTag);
-        System.out.println("Save tag: " + shulkerEntityTag);
     }
 }
