@@ -1,12 +1,15 @@
 package se.puggan.packingstick;
 
+import net.minecraft.block.ShulkerBoxBlock;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
+import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,6 +22,7 @@ public class PackingStickItem extends Item {
     private Map<String, List<ItemReference>> stackableItems;
     private Map<String, List<ItemReference>> fullStacks;
     private List<ItemReference> emptyStacks;
+    private List<ItemReference> shulkerItems;
     private List<ItemReference> uniqueItems;
 
     private PlayerInventory inventory;
@@ -37,9 +41,12 @@ public class PackingStickItem extends Item {
 
     @Override
     public TypedActionResult<ItemStack> use(World world, PlayerEntity player, Hand hand) {
+        if (world.isClient) {
+            return TypedActionResult.pass(player.getStackInHand(hand));
+        }
         inventory = player.getInventory();
         clearLists();
-        registerItem(player.getStackInHand(Hand.OFF_HAND), ItemReference.Types.HAND, 0, 0);
+        registerItem(player.getStackInHand(Hand.OFF_HAND), ItemReference.Types.HAND, 0, null);
         if (loadPlayerInventory()) {
             return TypedActionResult.success(player.getStackInHand(hand), true);
         }
@@ -58,33 +65,72 @@ public class PackingStickItem extends Item {
             return TypedActionResult.success(player.getStackInHand(hand), true);
         }
 
+        if (shulkerItems.size() > 0) {
+            for (ItemReference shulkerRef : shulkerItems) {
+                if (registerShulker(shulkerRef)) {
+                    return TypedActionResult.success(player.getStackInHand(hand), true);
+                }
+            }
+            ItemReference emptyShulker = null;
+            for (ItemReference shulkerRef : shulkerItems) {
+                System.out.println("Shulker space: " + shulkerRef.space() + " in: " + shulkerRef.description());
+                if (shulkerRef.space() > 0) {
+                    emptyShulker = shulkerRef;
+                    break;
+                }
+            }
+
+            if (emptyShulker != null) {
+                System.out.println("Shulker with empty spaces found at: " + emptyShulker.description());
+                for(List<ItemReference> itemList : fullStacks.values()) {
+                    for (ItemReference fullRef : itemList) {
+                        if (fullRef.getType() == ItemReference.Types.INVENTORY) {
+                            System.out.println("Movind " + fullRef.description() + " to shulkerbox.");
+                            move(emptyShulker, emptyShulker.findEmptyShulkerIndex(), fullRef);
+                            return TypedActionResult.success(player.getStackInHand(hand), true);
+                        }
+                    }
+                }
+            }
+        }
+
         return TypedActionResult.pass(player.getStackInHand(hand));
     }
 
     private void clearLists() {
+        System.out.println("Restart search -- Emptying all lists");
         stackableItems = new HashMap<>();
         emptyStacks = new Stack<>();
+        shulkerItems = new Stack<>();
         fullStacks = new HashMap<>();
         uniqueItems = new Stack<>();
     }
 
-    private ItemReference registerItem(ItemStack stack, ItemReference.Types type, int index, int storageIndex) {
-        ItemReference itemReference = new ItemReference(stack, type, index, storageIndex);
+    private ItemReference registerItem(ItemStack stack, ItemReference.Types type, int index, @Nullable ItemReference parent) {
+        ItemReference itemReference = new ItemReference(stack, type, index, parent);
         if (stack.isEmpty()) {
             emptyStacks.add(itemReference);
             return itemReference;
         }
 
         if (!stack.isStackable()) {
-            uniqueItems.add(itemReference);
+            Item item = stack.getItem();
+            if (item instanceof BlockItem bItem && bItem.getBlock() instanceof ShulkerBoxBlock) {
+                shulkerItems.add(itemReference);
+                System.out.println("Shulker found: " + itemReference.description());
+            } else {
+                uniqueItems.add(itemReference);
+            }
             return itemReference;
         }
 
         Map<String, List<ItemReference>> itemMap = itemReference.isMergeable() ? stackableItems : fullStacks;
 
         String itemKey = stack.getItem().getTranslationKey();
-        List<ItemReference> itemList = itemMap.get(itemKey);
-        if (itemList == null) {
+        List<ItemReference> itemList;
+        if (itemMap.containsKey(itemKey)) {
+            itemList = itemMap.get(itemKey);
+        } else {
             itemList = new Stack<>();
             itemMap.put(itemKey, itemList);
         }
@@ -94,7 +140,7 @@ public class PackingStickItem extends Item {
     }
 
     @Nullable
-    private ItemReference findMergable(ItemReference itemReference, boolean split) {
+    private ItemReference findMergeable(ItemReference itemReference, boolean split, boolean toStorage) {
         if (!itemReference.isMergeable()) {
             return null;
         }
@@ -103,14 +149,54 @@ public class PackingStickItem extends Item {
         int size = stack.getCount();
         String itemKey = stack.getItem().getTranslationKey();
         List<ItemReference> itemList = stackableItems.get(itemKey);
+        if (itemList != null) {
+            for (ItemReference other : itemList) {
+                if (other == itemReference) {
+                    continue;
+                }
+                if (toStorage) {
+                    int space = other.space();
+                    boolean ok = false;
+                    switch (other.getType()) {
+                        case HOTBAR -> ok = size > space;
+                        case INVENTORY -> ok = true;
+                    }
+                    if (!ok) {
+                        continue;
+                    }
+                }
+                if (!split && size > other.space()) {
+                    continue;
+                }
+                if (ItemStack.canCombine(stack, other.getStack())) {
+                    return other;
+                }
+            }
+        }
+
+        if(!split) {
+            return null;
+        }
+
+        if (!toStorage) {
+            return null;
+        }
+        System.out.println("No merge found for " + itemReference.description());
+
+        itemList = fullStacks.get(itemKey);
         if (itemList == null) {
             return null;
         }
+
         for (ItemReference other : itemList) {
             if (other == itemReference) {
                 continue;
             }
-            if (split && size > other.space()) {
+            boolean ok = false;
+            switch (other.getType()) {
+                case HOTBAR, INVENTORY -> ok = true;
+            }
+            if (!ok) {
                 continue;
             }
             if (ItemStack.canCombine(stack, other.getStack())) {
@@ -118,6 +204,7 @@ public class PackingStickItem extends Item {
             }
         }
 
+        System.out.println("No split found for " + itemReference.description());
         return null;
     }
 
@@ -139,10 +226,29 @@ public class PackingStickItem extends Item {
         return true;
     }
 
+    private boolean move(ItemReference shulkerReference, int index, ItemReference from) {
+        ItemStack stack = from.getStack();
+        shulkerReference.setShulkerSlot(index, stack);
+        switch (from.getType()) {
+            case INVENTORY, HOTBAR -> inventory.setStack(from.getIndex(), ItemStack.EMPTY);
+            case HAND -> inventory.player.setStackInHand(Hand.OFF_HAND, ItemStack.EMPTY);
+            case SHULKER -> {
+                from.setShulkerSlot(index, ItemStack.EMPTY);
+                markDirty(from.getParent());
+            }
+            default -> throw new RuntimeException("Unknown type");
+        }
+        markDirty(from);
+        return true;
+    }
+
     private void markDirty(ItemReference ref) {
         switch (ref.getType()) {
             case INVENTORY, HOTBAR, HAND -> inventory.markDirty();
-            case STORAGE -> throw new RuntimeException("Type storage not implemented");
+            case SHULKER -> {
+                ref.saveShulker();
+                markDirty(ref.getParent());
+            }
             default -> throw new RuntimeException("Unkown type storage not implemented");
         }
     }
@@ -150,11 +256,11 @@ public class PackingStickItem extends Item {
     private boolean loadPlayerInventory() {
         for (int i = 0; i < inventory.main.size(); ++i) {
             if (PlayerInventory.isValidHotbarIndex(i)) {
-                registerItem(inventory.getStack(i), ItemReference.Types.HOTBAR, i, 0);
+                registerItem(inventory.getStack(i), ItemReference.Types.HOTBAR, i, null);
                 continue;
             }
-            ItemReference currentRef = registerItem(inventory.getStack(i), ItemReference.Types.INVENTORY, i, 0);
-            ItemReference mergeable = findMergable(currentRef, false);
+            ItemReference currentRef = registerItem(inventory.getStack(i), ItemReference.Types.INVENTORY, i, null);
+            ItemReference mergeable = findMergeable(currentRef, false, false);
             if (mergeable == null) {
                 continue;
             }
@@ -236,6 +342,62 @@ public class PackingStickItem extends Item {
                 }
             }
         }
+        return false;
+    }
+
+    private boolean registerShulker(ItemReference shulkerReference) {
+        System.out.println("Register Shulker: " + shulkerReference.description());
+        DefaultedList<ItemStack> shulkerInventory = shulkerReference.loadShulker();
+        int inventorySize = shulkerInventory.size();
+        System.out.println("Shulker Items: " + inventorySize);
+
+        int firstEmpty = -1;
+        for (int i = 0; i < inventorySize; ++i) {
+            ItemStack stack = shulkerInventory.get(i);
+            if (stack.isEmpty()) {
+                if (firstEmpty == -1) {
+                    firstEmpty = i;
+                    System.out.println("Shulker Item " + i + ": (Empty)");
+                }
+                continue;
+            }
+            System.out.println("Shulker Item " + i + ": " + stack.getName().getString());
+            ItemReference stackRef = registerItem(stack, ItemReference.Types.SHULKER, i, shulkerReference);
+            if (!stackRef.isMergeable()) {
+                continue;
+            }
+            ItemReference otherRef = findMergeable(stackRef, true, true);
+            if (otherRef == null) {
+                continue;
+            }
+            return merge(stackRef, otherRef);
+        }
+
+        if (firstEmpty < 0) {
+            return false;
+        }
+
+        List<String> tested = new Stack<>();
+        for (int i = 0; i < inventorySize; ++i) {
+            ItemStack stack = shulkerInventory.get(i);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            String itemKey = stack.getItem().getTranslationKey();
+            if (tested.contains(itemKey)) {
+                continue;
+            }
+            tested.add(itemKey);
+            if (fullStacks.containsKey(itemKey)) {
+                for (ItemReference other : fullStacks.get(itemKey)) {
+                    if (other.getType() != ItemReference.Types.INVENTORY) {
+                        continue;
+                    }
+                    return move(shulkerReference, firstEmpty, other);
+                }
+            }
+        }
+
         return false;
     }
 }
