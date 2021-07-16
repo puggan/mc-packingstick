@@ -122,12 +122,12 @@ public class ItemReference {
             return inventory;
         }
         inventory = DefaultedList.ofSize(shulkerSize, ItemStack.EMPTY);
-        if (!stack.hasTag()) {
+        if (!stack.hasNbt()) {
             availableSpace = shulkerSize;
             return inventory;
         }
 
-        NbtCompound shulkerItemTags = stack.getTag();
+        NbtCompound shulkerItemTags = stack.getNbt();
         System.out.println("Shulker Tag: " + shulkerItemTags.toString());
         // noinspection ConstantConditions tested with hasTag()
         NbtCompound shulkerEntityTag = shulkerItemTags.getCompound(BlockItem.BLOCK_ENTITY_TAG_KEY);
@@ -157,7 +157,7 @@ public class ItemReference {
             }
             throw new RuntimeException("Can't save missing inventory from " + description());
         }
-        NbtCompound shulkerItemTags = stack.getOrCreateTag();
+        NbtCompound shulkerItemTags = stack.getOrCreateNbt();
         NbtCompound shulkerEntityTag = shulkerItemTags.getCompound(BlockItem.BLOCK_ENTITY_TAG_KEY);
         shulkerEntityTag.remove("Items");
         Inventories.writeNbt(shulkerEntityTag, inventory, false);
